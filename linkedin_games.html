@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>LinkedIn-Style Queens & Tango (High-Contrast Regions)</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  :root {
+    --bg:#0d1117; --panel:#161b22; --border:#30363d; --text:#e6edf3; --muted:#7d8590;
+    --ok:#2da44e; --bad:#d1242f; --accent:#1f6feb;
+    /* region edge highlight */
+    --regionEdge:#fef08a; /* warm yellow for max contrast on dark */
+  }
+  body { margin:24px; background:var(--bg); color:var(--text);
+    font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;}
+  h1 { margin:0 0 8px; font-size:20px;}
+  .tabs { display:flex; gap:8px; margin:0 0 16px;}
+  .tab { padding:8px 12px; border:1px solid var(--border); background:#21262d; cursor:pointer; border-radius:6px; user-select:none; }
+  .tab.active { border-color:var(--accent); }
+  .wrap { display:none; gap:20px; }
+  .wrap.active { display:flex; flex-wrap:wrap; align-items:flex-start; }
+  .panel { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:12px; min-width:280px; }
+  button { background:#21262d; color:var(--text); border:1px solid var(--border); padding:8px 12px; border-radius:6px; cursor:pointer; user-select:none; }
+  button:hover { background:#30363d; }
+  .status.ok { color:var(--ok); } .status.bad { color:var(--bad); } .muted{color:var(--muted)}
+  .pill { display:inline-block; padding:2px 8px; border-radius:999px; background:#21262d; border:1px solid var(--border); margin-right:6px;}
+  .btn-row { display:flex; flex-wrap:wrap; gap:8px; margin:8px 0; }
+  .legend { display:flex; gap:12px; align-items:center; margin-top:6px;}
+  .dot { width:12px; height:12px; border-radius:50%; display:inline-block; border:1px solid var(--border);}
+  .okdot{ background:#2da44e55;} .baddot{ background:#d1242f55;}
+
+  /* Queens board */
+  .q-board { display:grid; grid-template-columns: repeat(6, 56px); grid-auto-rows:56px; }
+  .q-cell {
+    position:relative; display:flex; align-items:center; justify-content:center;
+    border:1px solid #1b232d; /* subtle inner grid */
+    font-size:30px; cursor:pointer; user-select:none;
+    /* slight inner glow so region fills pop */
+    box-shadow: inset 0 0 0 9999px rgba(255,255,255,0.02);
+  }
+  .q-cell.bad { animation: q-blink 250ms linear 2; }
+  @keyframes q-blink { 50% { box-shadow: inset 0 0 0 100vmax rgba(209,36,47,0.28);} }
+
+  /* HIGH-CONTRAST REGION COLORS (6 distinct hues, saturated) */
+  .region-0{ background:#1e3a8a; } /* deep indigo */
+  .region-1{ background:#065f46; } /* deep teal-green */
+  .region-2{ background:#7c2d12; } /* burnt orange-brown */
+  .region-3{ background:#6d28d9; } /* vivid purple */
+  .region-4{ background:#9a3412; } /* bright rust */
+  .region-5{ background:#1d4ed8; } /* strong blue */
+
+  /* Region edge outlines (auto-applied per side) */
+  .q-cell.edge-top    { border-top:    3px solid var(--regionEdge) !important; }
+  .q-cell.edge-right  { border-right:  3px solid var(--regionEdge) !important; }
+  .q-cell.edge-bottom { border-bottom: 3px solid var(--regionEdge) !important; }
+  .q-cell.edge-left   { border-left:   3px solid var(--regionEdge) !important; }
+
+  /* Notes + illegal shading */
+  .q-cell.note { color:#ffd33d; font-weight:700; }
+  .q-cell.blocked::after {
+    content:""; position:absolute; inset:0; background:rgba(209,36,47,0.25); pointer-events:none;
+  }
+
+  /* Tango board */
+  .t-board { display:grid; grid-template-columns: repeat(6, 56px); grid-auto-rows:56px; }
+  .t-cell { display:flex; align-items:center; justify-content:center; border:1px solid var(--border); background:#0f141a; cursor:pointer; font-size:26px; user-select:none; }
+  .t-cell.lock { background:#111e25; color:#9ecbff; cursor:default; }
+</style>
+</head>
+<body>
+  <h1>LinkedIn-Style Daily Puzzles: Queens & Tango</h1>
+  <div class="tabs">
+    <div class="tab active" data-target="queens">Queens</div>
+    <div class="tab" data-target="tango">Tango</div>
+  </div>
+
+  <!-- QUEENS -->
+  <section id="queens" class="wrap active">
+    <div class="q-board" id="qBoard" role="grid" aria-label="Queens board"></div>
+    <aside class="panel">
+      <h2>Queens (6×6)</h2>
+      <div class="muted">Rules: Place <b>6 queens</b> so each <b>row</b>, <b>column</b>, and <b>colored region</b> has exactly one queen, and queens aren’t <b>adjacent</b> (even diagonally).</div>
+      <div style="margin:10px 0;">
+        <span class="pill">Placed: <b id="qCount">0</b> / 6</span>
+      </div>
+      <div class="btn-row">
+        <button id="qReset">Reset</button>
+        <button id="qCheck">Check</button>
+        <button id="qNew">New Board</button>
+        <button id="qMarkToggle">Mark (X) Mode: Off</button>
+        <button id="qBlockers">Show Blockers</button>
+      </div>
+      <div id="qStatus" class="muted">Left-click: queen. Right-click (or Mark Mode): X note. “Show Blockers” shades illegal squares.</div>
+      <div class="legend"><span><span class="dot okdot"></span>valid</span><span><span class="dot baddot"></span>illegal</span></div>
+    </aside>
+  </section>
+
+  <!-- TANGO -->
+  <section id="tango" class="wrap">
+    <div class="t-board" id="tBoard" role="grid" aria-label="Tango board"></div>
+    <aside class="panel">
+      <h2>Tango (6×6)</h2>
+      <div class="muted">Rules: Fill the grid with two symbols so each row/column has <b>3 & 3</b>, no <b>three-in-a-row</b> horizontally or vertically, and no <b>identical rows/columns</b>.</div>
+      <div class="btn-row">
+        <button id="tReset">Reset</button>
+        <button id="tCheck">Check</button>
+        <button id="tHint">Hint</button>
+        <button id="tNew">New Board</button>
+      </div>
+      <div id="tStatus" class="muted">Click a cell to cycle: blank → ☀ → 🌑 (prefilled cells are locked).</div>
+    </aside>
+  </section>
+
+<script>
+/* ---------- Tabs ---------- */
+(function(){
+  var tabs = document.querySelectorAll('.tab');
+  for (var i=0;i<tabs.length;i++){
+    tabs[i].onclick = function(){
+      for (var j=0;j<tabs.length;j++){ tabs[j].classList.remove('active'); }
+      this.classList.add('active');
+      var target = this.getAttribute('data-target');
+      var wraps = document.querySelectorAll('.wrap');
+      for (var k=0;k<wraps.length;k++){
+        wraps[k].classList.toggle('active', wraps[k].id === target);
+      }
+    };
+  }
+})();
+
+/* ---------- QUEENS (LinkedIn rules) with X-notes + blockers + high-contrast regions ---------- */
+(function(){
+  var N = 6;
+
+  var qBoard   = document.getElementById('qBoard');
+  var qStatus  = document.getElementById('qStatus');
+  var qCountEl = document.getElementById('qCount');
+
+  var qResetBtn = document.getElementById('qReset');
+  var qCheckBtn = document.getElementById('qCheck');
+  var qNewBtn   = document.getElementById('qNew');
+  var qMarkBtn  = document.getElementById('qMarkToggle');
+  var qBlockBtn = document.getElementById('qBlockers');
+
+  /* Puzzle pack: 6x6 region layouts (0..5). One queen per region. */
+  var PACK = [
+    [
+      [0,0,1,1,2,2],
+      [0,3,3,1,2,2],
+      [0,3,4,4,4,2],
+      [5,3,3,4,2,2],
+      [5,5,3,4,4,2],
+      [5,5,5,4,1,1]
+    ],
+    [
+      [0,0,0,1,1,1],
+      [0,2,2,1,3,1],
+      [2,2,4,3,3,3],
+      [2,4,4,4,5,3],
+      [2,4,5,5,5,3],
+      [2,4,5,5,5,3]
+    ],
+    [
+      [0,0,1,1,1,2],
+      [0,3,3,1,2,2],
+      [0,3,4,4,2,2],
+      [5,3,4,4,4,2],
+      [5,5,5,4,2,2],
+      [5,5,5,4,2,2]
+    ]
+  ];
+  var packIdx = 0;
+  var regions = PACK[packIdx];
+
+  /* State */
+  var queens = {};     // "r,c" -> true
+  var notes  = {};     // "r,c" -> true for X marks
+  var showBlockers = false;
+  var markMode     = false;
+
+  function key(r,c){ return r+','+c; }
+  function inb(r,c){ return r>=0 && r<N && c>=0 && c<N; }
+
+  function load(idx){
+    packIdx = (idx+PACK.length)%PACK.length;
+    regions = PACK[packIdx];
+    queens = {};
+    notes  = {};
+    build();
+  }
+
+  function build(){
+    qBoard.innerHTML='';
+    for (var r=0;r<N;r++){
+      for (var c=0;c<N;c++){
+        var cell = document.createElement('div');
+        var reg  = regions[r][c];
+        cell.className = 'q-cell region-'+reg;
+        cell.setAttribute('role','gridcell');
+        cell.setAttribute('aria-label','Row '+(r+1)+', Col '+(c+1));
+        cell.setAttribute('data-r', r);
+        cell.setAttribute('data-c', c);
+
+        /* Add thick borders where region changes to make regions stand out */
+        if (r===0 || regions[r-1][c]!==reg) cell.classList.add('edge-top');
+        if (r===N-1 || regions[r+1][c]!==reg) cell.classList.add('edge-bottom');
+        if (c===0 || regions[r][c-1]!==reg) cell.classList.add('edge-left');
+        if (c===N-1 || regions[r][c+1]!==reg) cell.classList.add('edge-right');
+
+        // Left click
+        cell.onclick = onLeftClick;
+
+        // Right click -> toggle X note
+        cell.oncontextmenu = function(e){
+          e.preventDefault();
+          var rr = +this.getAttribute('data-r');
+          var cc = +this.getAttribute('data-c');
+          toggleNote(rr,cc);
+          return false;
+        };
+
+        qBoard.appendChild(cell);
+      }
+    }
+    render();
+  }
+
+  /* Legality helpers */
+  function isAdjacentToQueen(r,c){
+    for (var dr=-1; dr<=1; dr++){
+      for (var dc=-1; dc<=1; dc++){
+        if (dr===0 && dc===0) continue;
+        var rr=r+dr, cc=c+dc;
+        if (inb(rr,cc) && queens[key(rr,cc)]) return true;
+      }
+    }
+    return false;
+  }
+  function rowHasQueen(r){ for (var c=0;c<N;c++) if (queens[key(r,c)]) return true; return false; }
+  function colHasQueen(c){ for (var r=0;r<N;r++) if (queens[key(r,c)]) return true; return false; }
+  function regionHasQueen(reg){
+    for (var r=0;r<N;r++) for (var c=0;c<N;c++) if (regions[r][c]===reg && queens[key(r,c)]) return true;
+    return false;
+  }
+  function legal(r,c){
+    if (queens[key(r,c)]) return true;   // removing is fine
+    if (isAdjacentToQueen(r,c)) return false;
+    if (rowHasQueen(r)) return false;
+    if (colHasQueen(c)) return false;
+    if (regionHasQueen(regions[r][c])) return false;
+    return true;
+  }
+
+  /* Interactions */
+  function onLeftClick(e){
+    var r = +e.currentTarget.getAttribute('data-r');
+    var c = +e.currentTarget.getAttribute('data-c');
+    if (markMode){ toggleNote(r,c); return; }
+
+    var k = key(r,c);
+    if (queens[k]){ delete queens[k]; render(); return; }
+
+    if (!legal(r,c)){
+      flashBad(e.currentTarget);
+      qStatus.textContent = 'Illegal: row/col/region conflict or adjacency.';
+      return;
+    }
+    queens[k] = true;
+    if (notes[k]) delete notes[k];
+    render();
+  }
+
+  function toggleNote(r,c){
+    var k = key(r,c);
+    if (queens[k]) return; // no X on top of a queen
+    if (notes[k]) delete notes[k];
+    else notes[k] = true;
+    render();
+  }
+
+  function flashBad(el){ el.classList.add('bad'); setTimeout(function(){ el.classList.remove('bad');}, 260); }
+
+  function computeBlocked(){
+    var blocked = {};
+    for (var r=0;r<N;r++){
+      for (var c=0;c<N;c++){
+        var k = key(r,c);
+        if (queens[k]) continue;
+        if (!legal(r,c)) blocked[k] = true;
+      }
+    }
+    return blocked;
+  }
+
+  function render(){
+    var kids = qBoard.children;
+    for (var i=0;i<kids.length;i++){
+      kids[i].textContent='';
+      kids[i].classList.remove('note','blocked');
+    }
+
+    // notes
+    for (var nk in notes){
+      if (!notes.hasOwnProperty(nk)) continue;
+      var rc = nk.split(',');
+      var r = +rc[0], c = +rc[1];
+      var idx = r*N+c;
+      if (kids[idx]){
+        kids[idx].textContent = '×';
+        kids[idx].classList.add('note');
+      }
+    }
+
+    // queens
+    var count=0;
+    for (var k in queens){
+      if (!queens.hasOwnProperty(k)) continue;
+      var rc2 = k.split(',');
+      var r2 = +rc2[0], c2 = +rc2[1];
+      var idx2 = r2*N+c2;
+      if (kids[idx2]){
+        kids[idx2].textContent = '♛';
+        count++;
+      }
+    }
+    qCountEl.textContent = count;
+
+    // blockers
+    if (showBlockers){
+      var b = computeBlocked();
+      for (var kk in b){
+        if (!b.hasOwnProperty(kk)) continue;
+        if (queens[kk]) continue;
+        var rc3 = kk.split(',');
+        var r3 = +rc3[0], c3 = +rc3[1];
+        var idx3 = r3*N+c3;
+        if (kids[idx3]) kids[idx3].classList.add('blocked');
+      }
+    }
+
+    // status + button labels
+    if (count===N){
+      var ok = fullVerify();
+      qStatus.className = ok ? 'status ok' : 'status bad';
+      qStatus.textContent = ok ? 'Solved: valid placement.' : '6 placed, but a rule is violated.';
+    } else {
+      qStatus.className = 'muted';
+      qStatus.textContent = (markMode ? 'Mark mode ON — click adds/removes X. ' : '')
+        + 'Place one queen per row, column, and region; no adjacencies.';
+    }
+    qMarkBtn.textContent = 'Mark (X) Mode: ' + (markMode ? 'On' : 'Off');
+    qBlockBtn.textContent = showBlockers ? 'Hide Blockers' : 'Show Blockers';
+  }
+
+  function fullVerify(){
+    // one per row
+    for (var r=0;r<N;r++){ var rc=0; for (var c=0;c<N;c++) if (queens[key(r,c)]) rc++; if (rc!==1) return false; }
+    // one per col
+    for (var c=0;c<N;c++){ var cc=0; for (var r=0;r<N;r++) if (queens[key(r,c)]) cc++; if (cc!==1) return false; }
+    // one per region + no adjacencies
+    var seenReg = {};
+    for (var r2=0;r2<N;r2++) for (var c2=0;c2<N;c2++){
+      if (queens[key(r2,c2)]){
+        var reg=regions[r2][c2];
+        if (seenReg[reg]) return false;
+        seenReg[reg]=true;
+        if (isAdjacentToQueen(r2,c2)) return false;
+      }
+    }
+    for (var i=0;i<6;i++){ if (!seenReg[i]) return false; }
+    return true;
+  }
+
+  // Buttons
+  qResetBtn.onclick = function(){ queens={}; notes={}; render(); };
+  qCheckBtn.onclick = function(){
+    var ok = fullVerify();
+    qStatus.className = ok ? 'status ok' : 'status bad';
+    qStatus.textContent = ok ? 'All constraints satisfied.' : 'Rule violation present.';
+  };
+  qNewBtn.onclick   = function(){ load(packIdx+1); };
+  qMarkBtn.onclick  = function(){ markMode = !markMode; render(); };
+  qBlockBtn.onclick = function(){ showBlockers = !showBlockers; render(); };
+
+  load(0);
+})();
+
+/* ---------- TANGO (LinkedIn rules) with New Board ---------- */
+(function(){
+  var N = 6;
+  var tBoard = document.getElementById('tBoard');
+  var tStatus = document.getElementById('tStatus');
+  var tResetBtn = document.getElementById('tReset');
+  var tCheckBtn = document.getElementById('tCheck');
+  var tHintBtn  = document.getElementById('tHint');
+  var tNewBtn   = document.getElementById('tNew');
+
+  // -1 empty/unlocked; 1 sun (☀); 2 moon (🌑) — locked clues where value != -1
+  var PACK = [
+    [
+      [-1, -1,  2, -1, -1, -1],
+      [ 1, -1, -1, -1,  2, -1],
+      [-1, -1, -1,  1, -1, -1],
+      [-1,  2, -1, -1, -1,  1],
+      [-1, -1,  1, -1, -1, -1],
+      [-1, -1, -1,  2, -1, -1]
+    ],
+    [
+      [ 1, -1, -1, -1, -1,  2],
+      [-1, -1,  1, -1, -1, -1],
+      [-1,  2, -1, -1,  1, -1],
+      [-1, -1, -1,  2, -1, -1],
+      [-1, -1,  2, -1, -1, -1],
+      [ 2, -1, -1, -1, -1,  1]
+    ],
+    [
+      [-1,  1, -1, -1, -1,  2],
+      [-1, -1, -1,  1, -1, -1],
+      [ 2, -1, -1, -1, -1, -1],
+      [-1, -1,  2, -1, -1, -1],
+      [-1, -1, -1, -1,  2, -1],
+      [ 1, -1, -1, -1, -1, -1]
+    ]
+  ];
+  var packIdx = 0;
+
+  var grid = []; // 0 empty, 1 sun, 2 moon
+  var lock = []; // 1 if locked clue
+
+  function load(idx){
+    packIdx = (idx+PACK.length)%PACK.length;
+    var seed = PACK[packIdx];
+    grid = []; lock = [];
+    for (var r=0;r<N;r++){
+      var gr=[], lk=[];
+      for (var c=0;c<N;c++){
+        var v = seed[r][c];
+        if (v===-1){ gr.push(0); lk.push(0); } else { gr.push(v); lk.push(1); }
+      }
+      grid.push(gr); lock.push(lk);
+    }
+    draw();
+    tStatus.className='muted';
+    tStatus.textContent='Click to cycle: blank → ☀ → 🌑';
+  }
+
+  function draw(){
+    tBoard.innerHTML='';
+    for (var r=0;r<N;r++){
+      for (var c=0;c<N;c++){
+        var cell = document.createElement('div');
+        cell.className='t-cell'+(lock[r][c]?' lock':'');
+        cell.setAttribute('role','gridcell');
+        cell.setAttribute('aria-label','Row '+(r+1)+', Col '+(c+1));
+        cell.setAttribute('data-r',r); cell.setAttribute('data-c',c);
+        var v = grid[r][c];
+        cell.textContent = v===1?'☀':(v===2?'🌑':'');
+        if (!lock[r][c]) cell.onclick = onClick;
+        tBoard.appendChild(cell);
+      }
+    }
+  }
+
+  function onClick(e){
+    var r=+e.currentTarget.getAttribute('data-r');
+    var c=+e.currentTarget.getAttribute('data-c');
+    var v = grid[r][c];
+    grid[r][c] = (v+1)%3; // 0->1->2->0
+    draw();
+  }
+
+  function equalCountsLine(arr){
+    var ones=0, twos=0;
+    for (var i=0;i<arr.length;i++){ if (arr[i]===1) ones++; else if (arr[i]===2) twos++; }
+    return (ones===N/2 && twos===N/2);
+  }
+  function noTriples(arr){
+    for (var i=0;i<N-2;i++){
+      if (arr[i]!==0 && arr[i]===arr[i+1] && arr[i]===arr[i+2]) return false;
+    }
+    return true;
+  }
+  function distinctLines(getLine){
+    for (var a=0;a<N;a++){
+      var la=getLine(a); if (la.indexOf(0)!==-1) continue;
+      for (var b=a+1;b<N;b++){
+        var lb=getLine(b); if (lb.indexOf(0)!==-1) continue;
+        var same=true;
+        for (var i=0;i<N;i++){ if (la[i]!==lb[i]){ same=false; break; } }
+        if (same) return false;
+      }
+    }
+    return true;
+  }
+  function row(r){ var out=[]; for (var c=0;c<N;c++) out.push(grid[r][c]); return out; }
+  function col(c){ var out=[]; for (var r=0;r<N;r++) out.push(grid[r][c]); return out; }
+
+  function verify(partialOK){
+    for (var r=0;r<N;r++){
+      var rr = row(r);
+      if (rr.indexOf(0)===-1 && !equalCountsLine(rr)) return {ok:false, msg:'A row is not 3 ☀ and 3 🌑.'};
+      if (!noTriples(rr)) return {ok:false, msg:'Three-in-a-row in a row.'};
+    }
+    for (var c=0;c<N;c++){
+      var cc = col(c);
+      if (cc.indexOf(0)===-1 && !equalCountsLine(cc)) return {ok:false, msg:'A column is not 3 ☀ and 3 🌑.'};
+      if (!noTriples(cc)) return {ok:false, msg:'Three-in-a-row in a column.'};
+    }
+    if (!distinctLines(row)) return {ok:false, msg:'Two rows are identical.'};
+    if (!distinctLines(col)) return {ok:false, msg:'Two columns are identical.'};
+
+    var complete=true;
+    outer: for (var r2=0;r2<N;r2++) for (var c2=0;c2<N;c2++) if (grid[r2][c2]===0){ complete=false; break outer; }
+    if (complete || !partialOK){
+      for (var r3=0;r3<N;r3++){ if (!equalCountsLine(row(r3))) return {ok:false, msg:'Finalize counts: each row must be 3 & 3.'}; }
+      for (var c3=0;c3<N;c3++){ if (!equalCountsLine(col(c3))) return {ok:false, msg:'Finalize counts: each column must be 3 & 3.'}; }
+    }
+    return {ok:true, msg: complete ? 'Solved: valid Tango grid.' : 'So far, all rules satisfied.'};
+  }
+
+  function hint(){
+    // Prevent triples in rows
+    for (var r=0;r<N;r++){
+      for (var c=0;c<N-2;c++){
+        var a=grid[r][c], b=grid[r][c+1], d=grid[r][c+2];
+        if (a!==0 && a===b && d===0) return setAndReport(r,c+2, a===1?2:1, 'Prevent triple in row.');
+        if (b!==0 && b===d && a===0) return setAndReport(r,c,   b===1?2:1, 'Prevent triple in row.');
+      }
+    }
+    // Prevent triples in columns
+    for (var c2=0;c2<N;c2++){
+      for (var r2=0;r2<N-2;r2++){
+        var a2=grid[r2][c2], b2=grid[r2+1][c2], d2=grid[r2+2][c2];
+        if (a2!==0 && a2===b2 && d2===0) return setAndReport(r2+2,c2, a2===1?2:1, 'Prevent triple in column.');
+        if (b2!==0 && b2===d2 && a2===0) return setAndReport(r2,  c2, b2===1?2:1, 'Prevent triple in column.');
+      }
+    }
+    // Balance rows
+    for (var r3=0;r3<N;r3++){
+      var rr=row(r3), ones=count(rr,1), twos=count(rr,2);
+      if (ones===3) return fillBlanksRow(r3,2,'Row balance (3 ☀ already).');
+      if (twos===3) return fillBlanksRow(r3,1,'Row balance (3 🌑 already).');
+    }
+    // Balance columns
+    for (var c3=0;c3<N;c3++){
+      var cc=col(c3), ones2=count(cc,1), twos2=count(cc,2);
+      if (ones2===3) return fillBlanksCol(c3,2,'Column balance (3 ☀ already).');
+      if (twos2===3) return fillBlanksCol(c3,1,'Column balance (3 🌑 already).');
+    }
+    tStatus.textContent='No simple hint found. Keep deducing.';
+  }
+  function count(arr,val){ var n=0; for (var i=0;i<arr.length;i++) if (arr[i]===val) n++; return n; }
+  function setAndReport(r,c,val,msg){ if (!lock[r][c] && grid[r][c]===0){ grid[r][c]=val; draw(); tStatus.textContent='Hint: '+msg; } }
+  function fillBlanksRow(r,val,msg){ for (var c=0;c<N;c++) if (!lock[r][c] && grid[r][c]===0){ grid[r][c]=val; draw(); tStatus.textContent='Hint: '+msg; return; } }
+  function fillBlanksCol(c,val,msg){ for (var r=0;r<N;r++) if (!lock[r][c] && grid[r][c]===0){ grid[r][c]=val; draw(); tStatus.textContent='Hint: '+msg; return; } }
+
+  tResetBtn.onclick = function(){ load(packIdx); };
+  tCheckBtn.onclick = function(){ var res = verify(true); tStatus.className = res.ok?'status ok':'status bad'; tStatus.textContent = res.msg; };
+  tHintBtn.onclick  = hint;
+  tNewBtn.onclick   = function(){ load(packIdx+1); };
+
+  load(0);
+})();
+</script>
+</body>
+</html>
